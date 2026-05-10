@@ -21,76 +21,152 @@
     .press:active { transform: scale(0.96); }
     @keyframes slideUp { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
     @keyframes fadeIn  { from { opacity:0; } to { opacity:1; } }
+    @keyframes spin    { to { transform: rotate(360deg); } }
     .slide-up { animation: slideUp 0.22s cubic-bezier(.22,1,.36,1); }
     .fade-in  { animation: fadeIn 0.18s ease; }
+    .spinner  { animation: spin 0.8s linear infinite; display:inline-block; }
     .card:active { opacity: 0.8; }
   </style>
 </head>
 <body>
   <div id="root"></div>
-
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useCallback } = React;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // STEP 1: Paste your Firebase database URL here after setup
+    // It looks like: https://your-project-default-rtdb.firebaseio.com
+    const FIREBASE_URL = "";
+    // ─────────────────────────────────────────────────────────────────────
 
     const FOOD_TYPES = [
       "Indian","Chinese","Italian","Mexican","Japanese","American",
       "Thai","Mediterranean","Korean","Middle Eastern","French",
       "Vietnamese","Greek","Pizza","Burgers","Seafood","Vegan","Fusion","Other"
     ];
-
     const PORTION_OPTIONS = [
-      { value:1, label:"Tiny" },
-      { value:2, label:"Small" },
-      { value:3, label:"Medium" },
-      { value:4, label:"Large" },
-      { value:5, label:"Huge" },
+      {value:1,label:"Tiny"},{value:2,label:"Small"},{value:3,label:"Medium"},
+      {value:4,label:"Large"},{value:5,label:"Huge"},
     ];
-
     const CUISINE_COLORS = {
-      Indian:"#fb923c", Chinese:"#f87171", Italian:"#4ade80", Mexican:"#facc15",
-      Japanese:"#a78bfa", American:"#60a5fa", Thai:"#f472b6", Mediterranean:"#22d3ee",
-      Korean:"#fb7185","Middle Eastern":"#fbbf24", French:"#c4b5fd", Vietnamese:"#34d399",
-      Greek:"#38bdf8", Pizza:"#fdba74", Burgers:"#fcd34d", Seafood:"#67e8f9",
-      Vegan:"#a3e635", Fusion:"#e879f9", Other:"#94a3b8"
+      Indian:"#fb923c",Chinese:"#f87171",Italian:"#4ade80",Mexican:"#facc15",
+      Japanese:"#a78bfa",American:"#60a5fa",Thai:"#f472b6",Mediterranean:"#22d3ee",
+      Korean:"#fb7185","Middle Eastern":"#fbbf24",French:"#c4b5fd",Vietnamese:"#34d399",
+      Greek:"#38bdf8",Pizza:"#fdba74",Burgers:"#fcd34d",Seafood:"#67e8f9",
+      Vegan:"#a3e635",Fusion:"#e879f9",Other:"#94a3b8"
+    };
+    const getColor = (t) => CUISINE_COLORS[t] || "#94a3b8";
+
+    // Firebase REST helpers — no API key needed with public rules
+    const dbFetch = async (url) => {
+      const res = await fetch(`${url}/restaurants.json`);
+      if (!res.ok) throw new Error("Load failed");
+      const data = await res.json();
+      return data ? Object.values(data) : [];
     };
 
-    const getColor = (t) => CUISINE_COLORS[t] || "#94a3b8";
-    const STORAGE_KEY = "restaurants:v1";
-    const loadItems = () => { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : []; } catch { return []; } };
-    const saveItems = (items) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch {} };
+    const dbSave = async (url, items) => {
+      // Store as an object keyed by id so Firebase handles it cleanly
+      const obj = {};
+      items.forEach(i => { obj[i.id] = i; });
+      const res = await fetch(`${url}/restaurants.json`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(obj),
+      });
+      if (!res.ok) throw new Error("Save failed");
+    };
 
-    const LBL = { fontSize:11, color:"#4a4a4a", letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:6, display:"block" };
+    const LBL  = { fontSize:11, color:"#4a4a4a", letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:6, display:"block" };
+    const FIELD = { width:"100%", background:"#1c1c1c", border:"1px solid #272727", borderRadius:10, padding:"11px 13px", fontSize:15, color:"#d4cfc9", outline:"none" };
 
+    // ── Setup Screen ────────────────────────────────────────────────────────
+    function SetupScreen({ onDone }) {
+      const [dbUrl,   setDbUrl]   = useState("");
+      const [loading, setLoading] = useState(false);
+      const [error,   setError]   = useState("");
+
+      const handleConnect = async () => {
+        const url = dbUrl.trim().replace(/\/$/, "");
+        if (!url) return;
+        setLoading(true);
+        setError("");
+        try {
+          await dbFetch(url); // just checks it works
+          onDone(url);
+        } catch {
+          setError("Couldn't connect. Double-check the URL and make sure your database rules allow read/write.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div style={{ minHeight:"100vh", background:"#0a0a0a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px", fontFamily:"'DM Sans',sans-serif" }}>
+          <div style={{ background:"#111", borderRadius:20, padding:"28px 22px", border:"1px solid #1e1e1e", width:"100%", maxWidth:400 }} className="fade-in">
+            <p style={{ fontSize:11, color:"#4a4a4a", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>One-time setup</p>
+            <h1 style={{ fontFamily:"'Lora',serif", fontSize:"1.4rem", color:"#d4cfc9", marginBottom:20 }}>Connect your database</h1>
+
+            <div style={{ display:"flex", flexDirection:"column", gap:14, marginBottom:24 }}>
+              {[
+                { n:1, text: <span>Go to <a href="https://console.firebase.google.com" target="_blank" style={{color:"#fb923c"}}>console.firebase.google.com</a> and click <strong style={{color:"#7a7a7a"}}>Create a project</strong></span> },
+                { n:2, text: <span>In the left sidebar go to <strong style={{color:"#7a7a7a"}}>Build → Realtime Database</strong> and click <strong style={{color:"#7a7a7a"}}>Create Database</strong>. Choose any location, then select <strong style={{color:"#7a7a7a"}}>"Start in test mode"</strong></span> },
+                { n:3, text: <span>Copy the database URL — it looks like <span style={{color:"#fb923c",fontFamily:"monospace",fontSize:12}}>https://your-project-default-rtdb.firebaseio.com</span></span> },
+                { n:4, text: "Paste it below and click Connect" },
+              ].map(s => (
+                <div key={s.n} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+                  <div style={{ width:22, height:22, borderRadius:"50%", background:"#1e1e1e", display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#d4cfc9", flexShrink:0, marginTop:2 }}>{s.n}</div>
+                  <p style={{ fontSize:13.5, color:"#6a6a6a", lineHeight:1.6 }}>{s.text}</p>
+                </div>
+              ))}
+            </div>
+
+            <label style={LBL}>Firebase Database URL</label>
+            <input
+              value={dbUrl}
+              onChange={e => setDbUrl(e.target.value)}
+              placeholder="https://your-project-default-rtdb.firebaseio.com"
+              style={{ ...FIELD, marginBottom: error ? 8 : 16 }}
+            />
+            {error && <p style={{ color:"#f87171", fontSize:12, marginBottom:14, lineHeight:1.5 }}>{error}</p>}
+
+            <button onClick={handleConnect} disabled={!dbUrl.trim() || loading} className="press" style={{ width:"100%", padding:"13px", borderRadius:12, border:"none", background:dbUrl.trim()?"#d4cfc9":"#1e1e1e", color:dbUrl.trim()?"#0a0a0a":"#333", fontSize:14, fontWeight:600, cursor:dbUrl.trim()?"pointer":"default" }}>
+              {loading ? <span className="spinner">⟳</span> : "Connect →"}
+            </button>
+
+            <p style={{ fontSize:11, color:"#2e2e2e", marginTop:16, lineHeight:1.6, textAlign:"center" }}>
+              Free tier · No credit card · No API key
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Modal ───────────────────────────────────────────────────────────────
     function Modal({ onSave, onClose, initial }) {
       const [name,    setName]    = useState(initial?.name    || "");
       const [type,    setType]    = useState(initial?.type    || "");
       const [portion, setPortion] = useState(initial?.portion || 3);
       const [rating,  setRating]  = useState(initial?.rating  || 0);
       const [notes,   setNotes]   = useState(initial?.notes   || "");
-
       const ready = name.trim().length > 0;
       const submit = () => {
         if (!ready) return;
         onSave({ id: initial?.id || Date.now().toString(), addedAt: initial?.addedAt || new Date().toISOString(), name: name.trim(), type, portion, rating, notes: notes.trim() });
       };
-
-      const field = { width:"100%", background:"#1c1c1c", border:"1px solid #272727", borderRadius:10, padding:"11px 13px", fontSize:15, color:"#d4cfc9", outline:"none" };
-
       return (
         <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200, backdropFilter:"blur(8px)" }}>
           <div onClick={e => e.stopPropagation()} className="slide-up" style={{ background:"#111", borderRadius:"22px 22px 0 0", padding:"22px 20px 44px", width:"100%", maxWidth:480, maxHeight:"93vh", overflowY:"auto", border:"1px solid #1e1e1e", borderBottom:"none" }}>
             <div style={{ width:32, height:4, background:"#272727", borderRadius:2, margin:"0 auto 22px" }} />
-            <h2 style={{ fontFamily:"'Lora',serif", fontSize:"1.2rem", color:"#e8e3dd", marginBottom:22 }}>
-              {initial ? "Edit Restaurant" : "New Restaurant"}
-            </h2>
+            <h2 style={{ fontFamily:"'Lora',serif", fontSize:"1.2rem", color:"#e8e3dd", marginBottom:22 }}>{initial ? "Edit" : "New Restaurant"}</h2>
             <div style={{ display:"flex", flexDirection:"column", gap:15 }}>
               <div>
                 <label style={LBL}>Name</label>
-                <input value={name} onChange={e => setName(e.target.value)} placeholder="Restaurant name" style={field} autoFocus />
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="Restaurant name" style={FIELD} autoFocus />
               </div>
               <div>
                 <label style={LBL}>Cuisine</label>
-                <select value={type} onChange={e => setType(e.target.value)} style={{ ...field, cursor:"pointer", color: type ? "#d4cfc9" : "#3a3a3a" }}>
+                <select value={type} onChange={e => setType(e.target.value)} style={{ ...FIELD, cursor:"pointer", color:type?"#d4cfc9":"#3a3a3a" }}>
                   <option value="">Select…</option>
                   {FOOD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -99,7 +175,7 @@
                 <label style={LBL}>Portion Size</label>
                 <div style={{ display:"flex", gap:7 }}>
                   {PORTION_OPTIONS.map(p => (
-                    <button key={p.value} onClick={() => setPortion(p.value)} className="press" style={{ flex:1, padding:"9px 0", borderRadius:9, border:"1.5px solid", borderColor: portion===p.value ? "#d4cfc9":"#252525", background: portion===p.value ? "#d4cfc9":"transparent", color: portion===p.value ? "#0a0a0a":"#4a4a4a", fontSize:12, fontWeight:500, cursor:"pointer", transition:"all 0.14s" }}>{p.label}</button>
+                    <button key={p.value} onClick={() => setPortion(p.value)} className="press" style={{ flex:1, padding:"9px 0", borderRadius:9, border:"1.5px solid", borderColor:portion===p.value?"#d4cfc9":"#252525", background:portion===p.value?"#d4cfc9":"transparent", color:portion===p.value?"#0a0a0a":"#4a4a4a", fontSize:12, fontWeight:500, cursor:"pointer", transition:"all 0.14s" }}>{p.label}</button>
                   ))}
                 </div>
               </div>
@@ -107,26 +183,26 @@
                 <label style={LBL}>Rating</label>
                 <div style={{ display:"flex", gap:3 }}>
                   {[1,2,3,4,5].map(r => (
-                    <button key={r} onClick={() => setRating(r===rating ? 0 : r)} style={{ background:"none", border:"none", fontSize:"1.7rem", cursor:"pointer", padding:0, lineHeight:1, color:"#f59e0b", opacity: rating>=r ? 1 : 0.15, transition:"opacity 0.12s" }}>★</button>
+                    <button key={r} onClick={() => setRating(r===rating?0:r)} style={{ background:"none", border:"none", fontSize:"1.7rem", cursor:"pointer", padding:0, lineHeight:1, color:"#f59e0b", opacity:rating>=r?1:0.15, transition:"opacity 0.12s" }}>★</button>
                   ))}
                 </div>
               </div>
               <div>
                 <label style={LBL}>Notes</label>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Best dish, vibe, worth returning?" rows={3} style={{ ...field, resize:"none", lineHeight:1.6 }} />
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Best dish, vibe, worth returning?" rows={3} style={{ ...FIELD, resize:"none", lineHeight:1.6 }} />
               </div>
-              <button onClick={submit} disabled={!ready} className="press" style={{ marginTop:4, padding:"14px 0", borderRadius:12, border:"none", background: ready ? "#d4cfc9":"#1e1e1e", color: ready ? "#0a0a0a":"#333", fontSize:15, fontWeight:600, cursor: ready ? "pointer":"default", transition:"all 0.18s" }}>Save</button>
+              <button onClick={submit} disabled={!ready} className="press" style={{ marginTop:4, padding:"14px 0", borderRadius:12, border:"none", background:ready?"#d4cfc9":"#1e1e1e", color:ready?"#0a0a0a":"#333", fontSize:15, fontWeight:600, cursor:ready?"pointer":"default", transition:"all 0.18s" }}>Save</button>
             </div>
           </div>
         </div>
       );
     }
 
+    // ── Card ────────────────────────────────────────────────────────────────
     function Card({ r, onEdit, onDelete }) {
       const [open, setOpen] = useState(false);
       const accent = getColor(r.type);
       const portionLabel = PORTION_OPTIONS.find(p => p.value===r.portion)?.label || "";
-
       return (
         <div className="card" style={{ background:"#111", borderRadius:15, border:"1px solid #1c1c1c", overflow:"hidden" }}>
           <div onClick={() => setOpen(o => !o)} style={{ padding:"15px 16px", display:"flex", alignItems:"flex-start", gap:12, cursor:"pointer" }}>
@@ -134,7 +210,7 @@
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
                 <p style={{ fontFamily:"'Lora',serif", fontWeight:600, fontSize:"1rem", color:"#d4cfc9", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.name}</p>
-                <span style={{ color:"#333", fontSize:11, flexShrink:0 }}>{open ? "▴" : "▾"}</span>
+                <span style={{ color:"#333", fontSize:11, flexShrink:0 }}>{open?"▴":"▾"}</span>
               </div>
               <div style={{ display:"flex", gap:7, marginTop:6, alignItems:"center", flexWrap:"wrap" }}>
                 {r.type && <span style={{ fontSize:11, fontWeight:500, color:accent, background:`${accent}18`, borderRadius:6, padding:"2px 8px" }}>{r.type}</span>}
@@ -156,14 +232,28 @@
       );
     }
 
-    function App() {
-      const [items,  setItems]  = useState(loadItems);
-      const [modal,  setModal]  = useState(null);
-      const [search, setSearch] = useState("");
-      const [filter, setFilter] = useState("");
-      const [sort,   setSort]   = useState("newest");
+    // ── Main App ────────────────────────────────────────────────────────────
+    function MainApp({ dbUrl }) {
+      const [items,   setItems]   = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [saving,  setSaving]  = useState(false);
+      const [modal,   setModal]   = useState(null);
+      const [search,  setSearch]  = useState("");
+      const [filter,  setFilter]  = useState("");
+      const [sort,    setSort]    = useState("newest");
 
-      const persist = (next) => { setItems(next); saveItems(next); };
+      useEffect(() => {
+        dbFetch(dbUrl).then(setItems).catch(console.error).finally(() => setLoading(false));
+      }, [dbUrl]);
+
+      const persist = async (next) => {
+        setItems(next);
+        setSaving(true);
+        try { await dbSave(dbUrl, next); }
+        catch { alert("Failed to save — check your connection."); }
+        finally { setSaving(false); }
+      };
+
       const handleSave = (restaurant) => {
         persist(modal?.id ? items.map(i => i.id===restaurant.id ? restaurant : i) : [restaurant, ...items]);
         setModal(null);
@@ -176,26 +266,27 @@
           return (!q || r.name.toLowerCase().includes(q) || (r.type||"").toLowerCase().includes(q)) && (!filter || r.type===filter);
         })
         .sort((a,b) => {
-          if (sort==="newest")  return new Date(b.addedAt) - new Date(a.addedAt);
-          if (sort==="rating")  return b.rating - a.rating;
-          if (sort==="portion") return b.portion - a.portion;
+          if (sort==="newest")  return new Date(b.addedAt)-new Date(a.addedAt);
+          if (sort==="rating")  return b.rating-a.rating;
+          if (sort==="portion") return b.portion-a.portion;
           return a.name.localeCompare(b.name);
         });
 
-      const chip = (active) => ({ background: active ? "#d4cfc9":"#161616", color: active ? "#0a0a0a":"#4a4a4a", border:`1px solid ${active ? "#d4cfc9":"#1e1e1e"}`, borderRadius:10, padding:"7px 13px", fontSize:12, fontWeight:500, cursor:"pointer", flexShrink:0, transition:"all 0.15s" });
+      const chip = (active) => ({ background:active?"#d4cfc9":"#161616", color:active?"#0a0a0a":"#4a4a4a", border:`1px solid ${active?"#d4cfc9":"#1e1e1e"}`, borderRadius:10, padding:"7px 13px", fontSize:12, fontWeight:500, cursor:"pointer", flexShrink:0, transition:"all 0.15s" });
 
       return (
         <div style={{ minHeight:"100vh", background:"#0a0a0a", fontFamily:"'DM Sans',sans-serif", maxWidth:480, margin:"0 auto" }}>
-
           <div style={{ background:"#0a0a0a", padding:"52px 20px 14px", position:"sticky", top:0, zIndex:100, borderBottom:"1px solid #141414" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:16 }}>
               <div>
-                <p style={{ fontSize:11, color:"#333", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:4 }}>Your Guide</p>
+                <p style={{ fontSize:11, color:"#333", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:4 }}>Shared Guide</p>
                 <h1 style={{ fontFamily:"'Lora',serif", fontSize:"1.8rem", fontWeight:700, color:"#d4cfc9", lineHeight:1 }}>Restaurants</h1>
               </div>
               <div style={{ textAlign:"right" }}>
-                <p style={{ fontSize:"1.6rem", fontWeight:700, color:"#d4cfc9", lineHeight:1 }}>{items.length}</p>
-                <p style={{ fontSize:11, color:"#333", marginTop:2 }}>saved</p>
+                {saving
+                  ? <p style={{ fontSize:12, color:"#4a4a4a" }}><span className="spinner">⟳</span> saving…</p>
+                  : <><p style={{ fontSize:"1.6rem", fontWeight:700, color:"#d4cfc9", lineHeight:1 }}>{items.length}</p><p style={{ fontSize:11, color:"#333", marginTop:2 }}>saved</p></>
+                }
               </div>
             </div>
             <div style={{ position:"relative", marginBottom:10 }}>
@@ -214,10 +305,12 @@
           </div>
 
           <div style={{ padding:"14px 18px 110px" }}>
-            {filtered.length===0 ? (
+            {loading ? (
+              <p style={{ textAlign:"center", color:"#2a2a2a", marginTop:60, fontSize:14 }}><span className="spinner">⟳</span> Loading…</p>
+            ) : filtered.length===0 ? (
               <div style={{ textAlign:"center", marginTop:72 }}>
                 <p style={{ fontSize:"2.5rem", marginBottom:12 }}>🍽️</p>
-                <p style={{ color:"#2a2a2a", fontSize:14 }}>{items.length===0 ? "Tap + to add your first restaurant" : "No results found"}</p>
+                <p style={{ color:"#2a2a2a", fontSize:14 }}>{items.length===0 ? "Tap + to add the first restaurant" : "No results found"}</p>
               </div>
             ) : (
               <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
@@ -228,12 +321,28 @@
 
           <button onClick={() => setModal("add")} className="press" style={{ position:"fixed", bottom:30, right:22, width:54, height:54, borderRadius:"50%", background:"#d4cfc9", color:"#0a0a0a", border:"none", fontSize:"1.5rem", cursor:"pointer", boxShadow:"0 6px 28px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:150 }}>+</button>
 
-          {modal && <Modal onSave={handleSave} onClose={() => setModal(null)} initial={modal==="add" ? null : modal} />}
+          {modal && <Modal onSave={handleSave} onClose={() => setModal(null)} initial={modal==="add"?null:modal} />}
         </div>
       );
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    // ── Root ────────────────────────────────────────────────────────────────
+    function Root() {
+      const [dbUrl, setDbUrl] = useState(() => {
+        if (FIREBASE_URL) return FIREBASE_URL;
+        return localStorage.getItem("rdb:firebaseUrl") || "";
+      });
+
+      const handleDone = (url) => {
+        localStorage.setItem("rdb:firebaseUrl", url);
+        setDbUrl(url);
+      };
+
+      if (!dbUrl) return <SetupScreen onDone={handleDone} />;
+      return <MainApp dbUrl={dbUrl} />;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
   </script>
 </body>
 </html>
