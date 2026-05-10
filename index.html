@@ -282,11 +282,13 @@
                 <p style={{ fontSize:11, color:"#333", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:4 }}>Shared Guide</p>
                 <h1 style={{ fontFamily:"'Lora',serif", fontSize:"1.8rem", fontWeight:700, color:"#d4cfc9", lineHeight:1 }}>Restaurants</h1>
               </div>
-              <div style={{ textAlign:"right" }}>
-                {saving
-                  ? <p style={{ fontSize:12, color:"#4a4a4a" }}><span className="spinner">⟳</span> saving…</p>
-                  : <><p style={{ fontSize:"1.6rem", fontWeight:700, color:"#d4cfc9", lineHeight:1 }}>{items.length}</p><p style={{ fontSize:11, color:"#333", marginTop:2 }}>saved</p></>
-                }
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                {saving && <p style={{ fontSize:12, color:"#4a4a4a" }}><span className="spinner">⟳</span></p>}
+                <button onClick={() => { setLoading(true); dbFetch(dbUrl).then(setItems).catch(console.error).finally(() => setLoading(false)); }} className="press" style={{ width:34, height:34, borderRadius:"50%", background:"#161616", border:"1px solid #1e1e1e", color:"#4a4a4a", fontSize:"1.1rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>⟳</button>
+                <div style={{ textAlign:"right" }}>
+                  <p style={{ fontSize:"1.6rem", fontWeight:700, color:"#d4cfc9", lineHeight:1 }}>{items.length}</p>
+                  <p style={{ fontSize:11, color:"#333", marginTop:2 }}>saved</p>
+                </div>
               </div>
             </div>
             <div style={{ position:"relative", marginBottom:10 }}>
